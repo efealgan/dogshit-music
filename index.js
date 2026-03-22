@@ -46,13 +46,18 @@ async function getVideoInfo(query) {
       noWarnings: true,
       preferFreeFormats: true,
       addHeader: ['referer:youtube.com', 'user-agent:googlebot'],
-      format: 'bestaudio',
     });
 
+    // If it's a search result, yt-dlp returns entries[]
+    const video = result.entries ? result.entries[0] : result;
+
+    if (!video) return null;
+
     return {
-      title: result.title,
-      url: result.webpage_url
+      title: video.title,
+      url: video.webpage_url
     };
+
   } catch (err) {
     console.error('Search error:', err);
     return null;
