@@ -21,7 +21,7 @@ const client = new Client({
 
 const guilds = new Map();
 
-client.on('ready', () => {
+client.on('clientReady', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
