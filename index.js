@@ -19,80 +19,170 @@ const client = new Client({
   ]
 });
 
-let player = createAudioPlayer();
+const guilds = new Map();
 
 client.on('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
+// GUILD STATE
+function getGuildState(guildId) {
+  if (!guilds.has(guildId)) {
+    guilds.set(guildId, {
+      connection: null,
+      player: createAudioPlayer(),
+      queue: [],
+      isPlaying: false
+    });
+  }
+  return guilds.get(guildId);
+}
+
+// SEARCH / INFO
+async function getVideoInfo(query) {
+  try {
+    const result = await ytdlp(query, {
+      dumpSingleJson: true,
+      noWarnings: true,
+      preferFreeFormats: true,
+      addHeader: ['referer:youtube.com', 'user-agent:googlebot'],
+      format: 'bestaudio',
+    });
+
+    return {
+      title: result.title,
+      url: result.webpage_url
+    };
+  } catch (err) {
+    console.error('Search error:', err);
+    return null;
+  }
+}
+
+// PLAYBACK
+async function playNext(guildId) {
+  const state = getGuildState(guildId);
+
+  if (state.queue.length === 0) {
+    state.isPlaying = false;
+    return;
+  }
+
+  state.isPlaying = true;
+  const song = state.queue.shift();
+
+  try {
+    const stream = ytdlp.exec(song.url, {
+      format: 'bestaudio',
+      output: '-'
+    });
+
+    const resource = createAudioResource(stream.stdout);
+
+    state.player.play(resource);
+
+    console.log(`Now playing: ${song.title}`);
+
+  } catch (err) {
+    console.error('Playback error:', err);
+    playNext(guildId);
+  }
+}
+
+// COMMAND HANDLER
 client.on('messageCreate', async (message) => {
-  if (!message.content.startsWith('!')) return;
+  if (!message.content.startsWith('!') || message.author.bot) return;
 
   const args = message.content.split(' ');
   const command = args[0];
+  const query = args.slice(1).join(' ');
 
-  if (command === '!play') {
-    const url = args[1];
-    if (!url) return message.reply('Add a YouTube URL after "!play".');
+  const state = getGuildState(message.guild.id);
+
+
+  // PLAY / NEXT
+
+  if (command === '!play' || command === '!next' || command === '!blyat') {
+    if (command !== '!blyat' && !query) return message.reply('Give me a URL or search term.');
 
     const voiceChannel = message.member.voice.channel;
     if (!voiceChannel) return message.reply('Join a voice channel first.');
 
-    const connection = joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId: message.guild.id,
-      adapterCreator: message.guild.voiceAdapterCreator
-    });
-
-    try {
-      const stream = ytdlp.exec(url, {
-        format: 'bestaudio',
-        output: '-'
+    // connect if not already
+    if (!state.connection) {
+      state.connection = joinVoiceChannel({
+        channelId: voiceChannel.id,
+        guildId: message.guild.id,
+        adapterCreator: message.guild.voiceAdapterCreator
       });
 
-      const resource = createAudioResource(stream.stdout);
+      state.connection.subscribe(state.player);
 
-      connection.subscribe(player);
-      player.play(resource);
-
-      message.reply('Playing...');
-
-    } catch (err) {
-      console.error(err);
-      message.reply('Error playing audio.');
-    }
-  }
-  if (command === '!blyat') {
-    const url = "https://www.youtube.com/watch?v=uQFMUv_cQBk"
-
-    const voiceChannel = message.member.voice.channel;
-    if (!voiceChannel) return message.reply('Blyat, join a voice channel first.');
-
-    const connection = joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId: message.guild.id,
-      adapterCreator: message.guild.voiceAdapterCreator
-    });
-
-    try {
-      const stream = ytdlp.exec(url, {
-        format: 'bestaudio',
-        output: '-'
+      state.player.on(AudioPlayerStatus.Idle, () => {
+        playNext(message.guild.id);
       });
+    }
 
-      const resource = createAudioResource(stream.stdout);
+    let video;
 
-      connection.subscribe(player);
-      player.play(resource);
+    if (command === '!blyat') {
+        video = await getVideoInfo("https://www.youtube.com/watch?v=uQFMUv_cQBk")
+    }
+    else if (query.startsWith('http')) {
+      video = await getVideoInfo(query);
+    } 
+    else {
+      video = await getVideoInfo(`ytsearch1:${query}`);
+    }
 
-    } catch (err) {
-      console.error(err);
-      message.reply('Error playing audio.');
+    if (!video) return message.reply('Could not find anything.');
+
+    if (command === '!next') {
+      state.queue.unshift(video);
+      message.reply(`Next: ${video.title}`);
+    } else {
+      state.queue.push(video);
+      if (command !== "!blyat"){
+        message.reply(`Queued: ${video.title}`);
+        }
+      
+    }
+
+    if (!state.isPlaying) {
+      playNext(message.guild.id);
     }
   }
-  if (command === '!stop' | command === '!stfu') {
-    player.stop();
-    message.reply('Stopped.');
+
+
+  // SKIP
+
+  if (command === '!skip') {
+    state.player.stop();
+    message.reply('Skipped.');
+  }
+
+
+  // QUEUE
+
+  if (command === '!queue') {
+    if (state.queue.length === 0) {
+      return message.reply('Queue is empty.');
+    }
+
+    const list = state.queue
+      .map((song, i) => `${i + 1}. ${song.title}`)
+      .join('\n');
+
+    message.reply(`Queue:\n${list}`);
+  }
+
+
+  // STOP
+
+  if (command === '!stop' || command === '!stfu') {
+    state.queue = [];
+    state.player.stop();
+    message.reply('Stopped and cleared queue.');
   }
 });
 
