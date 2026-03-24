@@ -194,8 +194,8 @@ client.on('messageCreate', async (message) => {
 
   // PLAY / NEXT
 
-  if (command === '!play' || command === '!next' || command === '!blyat') {
-    if (command !== '!blyat' && !query) return message.reply('Give me a URL or search term.');
+  if (command === '!play' || command === '!next' || command === '!blyat' || command === '!yippi' || command === '!yippee') {
+    if (command !== '!blyat' && command !== '!yippi' && command !== '!yippee' && !query) return message.reply('Give me a URL or search term.');
 
     const voiceChannel = message.member.voice.channel;
     if (!voiceChannel) return message.reply('Join a voice channel first.');
@@ -218,7 +218,10 @@ client.on('messageCreate', async (message) => {
     let video;
 
     if (command === '!blyat') {
-        video = await getVideoInfo("https://www.youtube.com/watch?v=uQFMUv_cQBk")
+      video = await getVideoInfo("https://www.youtube.com/watch?v=uQFMUv_cQBk")
+    }
+    else if (command === "!yippi" || command === "!yippee") {
+      video = await getVideoInfo("https://www.youtube.com/watch?v=d1NjkYjRn34")
     }
     else if (query.startsWith('http')) {
       video = await getVideoInfo(query);
@@ -234,7 +237,7 @@ client.on('messageCreate', async (message) => {
       message.reply(`Next: ${video.title}`);
     } else {
       state.queue.push(video);
-      if (command !== "!blyat"){
+      if (command !== "!blyat" && command !== "!yippi" && command !== "!yippee"){
         message.reply(`Queued: ${video.title}`);
         }
       
